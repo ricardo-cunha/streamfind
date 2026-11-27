@@ -114,7 +114,8 @@ std::uint64_t configured_worker_memory_limit_mb(const std::filesystem::path &con
     return load_service_configuration(configuration_path).worker_memory_limit_mb;
 }
 
-Json workflow_without_positions(Json workflow) {
+Json workflow_without_layout_and_metadata(Json workflow) {
+    workflow.erase("metadata");
     for (auto &operation : workflow["operations"]) operation.erase("position");
     return workflow;
 }
@@ -594,9 +595,11 @@ Json ProjectRuntimeManager::save_workflow(const std::string &session_id, const J
     if (expected_revision != current.definition_revision)
         throw WorkflowRevisionConflict(expected_revision, current.definition_revision);
     if (workflow.workflow_id.empty()) workflow.workflow_id = current.workflow_id.empty() ? "workflow" : current.workflow_id;
-    const bool layout_only = detail::workflow_without_positions(workflow.to_json()) ==
-                             detail::workflow_without_positions(current.to_json());
-    workflow.version = layout_only ? current.version : std::max(current.version + 1, workflow.version);
+    const bool execution_definition_unchanged =
+        detail::workflow_without_layout_and_metadata(workflow.to_json()) ==
+        detail::workflow_without_layout_and_metadata(current.to_json());
+    workflow.version = execution_definition_unchanged
+        ? current.version : std::max(current.version + 1, workflow.version);
     workflow.definition_revision = current.definition_revision + 1;
     iterator->second->set_workflow(workflow, *operations_);
     workflow_definitions_[session_id] = workflow;

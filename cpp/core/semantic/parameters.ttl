@@ -61,27 +61,61 @@ sfcore:pluginParameter
     sf:constraints "mass_spec|raman|sensors|streamfind" ;
     sf:example "mass_spec" .
 
-sfcore:metadataParameter
+sfcore:projectMetadataParameter
     a sf:Parameter ;
     sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Project metadata" ;
-    skos:definition "JSON object containing project-owned metadata. Metadata is user-owned and may contain arbitrary JSON keys." ;
+    skos:definition "User-defined annotations stored on the .sf project workspace. Separate from workflow metadata and future operational project configuration. Each stored value must be a JSON scalar." ;
     sf:type "object" ;
     sf:required true ;
     sf:default "{}" ;
-    sf:example "{}" .
+    sf:example "{\"owner\":\"research\"}" .
+
+sfcore:projectMetadataCreateParameter
+    a sf:Parameter ;
+    sf:availableInPlugin sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Initial project metadata" ;
+    skos:definition "Optional user-defined annotations for a new project workspace. Each value must be a JSON scalar; this field does not configure the workflow or scheduler." ;
+    sf:type "object" ;
+    sf:required false ;
+    sf:default "{}" ;
+    sf:example "{\"owner\":\"research\"}" .
 
 sfcore:workflowMetadataParameter
     a sf:Parameter ;
     sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow metadata" ;
-    skos:definition "User-defined JSON metadata for a workflow. Workflow revision is tracked separately by the top-level workflow version." ;
+    skos:definition "JSON metadata attached to the saved workflow definition, including its required name and description. Distinct from project metadata; replacing it does not modify operations or connections." ;
     sf:type "object" ;
     sf:required false ;
     sf:default "{}" ;
-    sf:example "{\"owner\":\"research\",\"purpose\":\"feature extraction\"}" .
+    sf:example "{\"name\":\"Peak review\",\"description\":\"Review chromatographic peaks\"}" .
+
+sfcore:workflowMetadataReplacementParameter
+    a sf:Parameter ;
+    sf:availableInPlugin sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Replacement workflow metadata" ;
+    skos:definition "Complete replacement object for workflow.metadata. Must contain a non-empty name and description; additional descriptive keys are allowed. Does not include operations or connections." ;
+    sf:type "object" ;
+    sf:required true ;
+    sf:default "{\"name\":\"Untitled workflow\",\"description\":\"Describe the purpose of this workflow.\"}" ;
+    sf:example "{\"name\":\"Peak review\",\"description\":\"Review chromatographic peaks\"}" .
+
+sfcore:workflowDefinitionRevisionParameter
+    a sf:Parameter ;
+    sf:availableInPlugin sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow definition revision" ;
+    skos:definition "Current concurrency revision returned by get_workflow. Always read and pass the current value to set_workflow_metadata; the initial value 1 is not a safe default for an existing project." ;
+    sf:type "integer" ;
+    sf:required true ;
+    sf:default 1 ;
+    sf:constraints "minimum:1" ;
+    sf:example "3" .
 
 sfcore:workflowParameter
     a sf:Parameter ;

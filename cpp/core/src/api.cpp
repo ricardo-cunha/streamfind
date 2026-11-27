@@ -87,8 +87,10 @@ ProjectCommand command_from_string(std::string_view name) {
     if (name == "get_project_plugins") return ProjectCommand::get_project_plugins;
     if (name == "copy") return ProjectCommand::copy;
     if (name == "run_workflow") return ProjectCommand::run_workflow;
-    if (name == "get_metadata") return ProjectCommand::get_metadata;
-    if (name == "set_metadata") return ProjectCommand::set_metadata;
+    if (name == "get_project_metadata") return ProjectCommand::get_project_metadata;
+    if (name == "set_project_metadata") return ProjectCommand::set_project_metadata;
+    if (name == "get_workflow_metadata") return ProjectCommand::get_workflow_metadata;
+    if (name == "set_workflow_metadata") return ProjectCommand::set_workflow_metadata;
 
     if (name == "get_audit_trail") return ProjectCommand::get_audit_trail;
     if (name == "close") return ProjectCommand::close;
@@ -107,7 +109,7 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
     case ProjectCommand::create: {
         auto options = detail::options_from_request(request);
         const auto attachment = service::create_project(
-            options.database_path.parent_path(), request.value("metadata", Json::object()),
+            options.database_path.parent_path(), request.value("project_metadata", Json::object()),
             options.workflow_metadata);
         return detail::project_json_table(service::get_project(attachment));
     }
@@ -297,16 +299,31 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
         const auto workflow = service::get_workflow(attachment);
         return {{"result", service::start_workflow(attachment)}, {"workflow", workflow}};
     }
-    case ProjectCommand::get_metadata: {
+    case ProjectCommand::get_project_metadata: {
         const auto attachment = service::attach_project(detail::options_from_request(request).database_path.parent_path());
         return detail::metadata_table(service::get_project(attachment).value("metadata", Json::object()));
     }
-    case ProjectCommand::set_metadata: {
-        if (!request.contains("metadata")) throw Error(ErrorCode::InvalidArgument, "Request requires metadata");
+    case ProjectCommand::set_project_metadata: {
+        if (!request.contains("project_metadata")) throw Error(ErrorCode::InvalidArgument, "Request requires project_metadata");
         const auto attachment = service::attach_project(
             detail::options_from_request(request).database_path.parent_path());
-        return detail::metadata_table(service::set_metadata(attachment, request.at("metadata"))
+        return detail::metadata_table(service::set_metadata(attachment, request.at("project_metadata"))
                                           .value("metadata", Json::object()));
+    }
+    case ProjectCommand::get_workflow_metadata: {
+        const auto attachment = service::attach_project(detail::options_from_request(request).database_path.parent_path());
+        return detail::metadata_table(service::get_workflow(attachment).value("metadata", Json::object()));
+    }
+    case ProjectCommand::set_workflow_metadata: {
+        if (!request.contains("workflow_metadata") || !request.contains("definition_revision"))
+            throw Error(ErrorCode::InvalidArgument, "Request requires workflow_metadata and definition_revision");
+        const auto attachment = service::attach_project(detail::options_from_request(request).database_path.parent_path());
+        auto workflow = service::get_workflow(attachment);
+        if (workflow.value("definition_revision", 0) != request.at("definition_revision").get<int>())
+            throw Error(ErrorCode::InvalidArgument, "Workflow definition revision is stale; read the latest workflow and retry");
+        workflow["metadata"] = request.at("workflow_metadata");
+        const auto saved = service::save_workflow(attachment, workflow);
+        return detail::metadata_table(saved.value("workflow", Json::object()).value("metadata", Json::object()));
     }
 
     case ProjectCommand::get_audit_trail: {

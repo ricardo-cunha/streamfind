@@ -121,9 +121,8 @@ A typical client:
 
 1. calls `initialize`;
 2. discovers callable Operations with `tools/list`;
-3. calls `create` to create a project, then `describe` or `get_metadata` to
-   inspect it;
-4. calls `get_domains` to discover available operation domains and
+3. calls `create` to create a project, then `describe` to inspect its deterministic project descriptor;
+4. calls `get_project_plugins` to inspect the project's configured plugins and `get_domains` to discover available operation domains, then
    `get_operations` / `get_operation` to inspect operations;
 5. invokes operations with `project_path` to a `.sf` folder, or builds a persisted operation
    graph with nodes and typed connections;

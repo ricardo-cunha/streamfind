@@ -58,14 +58,14 @@ sf:WorkflowMetadata
     a rdfs:Class ;
     rdfs:subClassOf skos:Concept ;
     skos:prefLabel "Workflow metadata" ;
-    skos:definition "User-defined JSON metadata stored with a workflow; the workflow revision is tracked separately by sf:version." .
+    skos:definition "Descriptive JSON attached to a saved workflow, including its name and purpose. Workflow definition concurrency is tracked by definition_revision, separately from result provenance version." .
 
 sf:workflowMetadata
     a rdf:Property ;
     rdfs:plugin sf:Workflow ;
     rdfs:range sf:WorkflowMetadata ;
     skos:prefLabel "workflow metadata" ;
-    skos:definition "Arbitrary user-defined JSON metadata associated with a workflow." .
+    skos:definition "Descriptive user-defined JSON associated with a workflow, such as its name and description; it does not configure the project workspace or scheduler." .
 
 sf:Parameter
     a rdfs:Class ;

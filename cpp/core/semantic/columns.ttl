@@ -3,12 +3,12 @@
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 
-sfcore:projectMetadataColumn
+sfcore:metadataObjectColumn
     a sf:Column ;
     sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Metadata" ;
-    skos:definition "Project metadata JSON." ;
+    skos:prefLabel "Metadata object" ;
+    skos:definition "Serialized JSON metadata object returned by the project descriptor or a project/workflow metadata command." ;
     sf:columnName "metadata" ;
     sf:type "string" ;
     sf:storageType "JSON" .

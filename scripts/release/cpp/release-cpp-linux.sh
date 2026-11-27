@@ -63,6 +63,8 @@ grep -Eq '(^|/)bin/streamfind-dev$' "$listing"
 grep -Eq '(^|/)dev/streamfind-dev-setup\.ps1$' "$listing"
 grep -Eq '(^|/)sdk/native/sdk-manifest\.json$' "$listing"
 grep -Eq '(^|/)sdk/viewer/@streamfind/viewer-sdk/package\.json$' "$listing"
+grep -Eq '(^|/)plugins/native/native\.plugin\.mass_spec/resources/workflows/mrm-quantification\.json$' "$listing"
+grep -Eq '(^|/)plugins/native/native\.plugin\.mass_spec/resources/workflows/non-target-screening-basic\.json$' "$listing"
 plugin_manifests=$(grep -E '(^|/)plugins/[^/]+/[^/]+/plugin\.json$' "$listing")
 test -n "$plugin_manifests"
 if grep -Eq '^[^/]+/core/vendors(/|$)' "$listing"; then

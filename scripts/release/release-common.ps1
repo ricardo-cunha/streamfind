@@ -43,6 +43,8 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
         'plugins/native/native.plugin.mass_spec/plugin.json',
         'plugins/native/native.plugin.mass_spec/catalogue.duckdb',
         'plugins/native/native.plugin.mass_spec/streamfind_mass_spec.dll',
+        'plugins/native/native.plugin.mass_spec/resources/workflows/mrm-quantification.json',
+        'plugins/native/native.plugin.mass_spec/resources/workflows/non-target-screening-basic.json',
         'plugins/native/native.plugin.mass_spec/ontology/operations.ttl',
         'plugins/native/native.plugin.raman/plugin.json',
         'plugins/native/native.plugin.raman/catalogue.duckdb',

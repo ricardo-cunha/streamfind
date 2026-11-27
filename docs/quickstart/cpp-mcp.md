@@ -65,7 +65,7 @@ A typical client or AI agent uses this sequence:
 1. call `initialize`;
 2. call `tools/list` to discover callable Operations;
 3. call `create` with `project_path` naming a new `.sf` folder;
-4. call `describe` or `get_metadata` to inspect the project, and
+4. call `describe` to inspect the deterministic project descriptor, and
    `get_project_plugins` to list plugins represented in it;
 5. call `get_plugins` to discover available operation plugins, then call a
    plugin Operation with `project_path`.

@@ -1,5 +1,6 @@
 #include "streamfind/service/service_server.hpp"
 #include "streamfind/service/service_protocol.hpp"
+#include "streamfind/service/workflow_demo_discovery.hpp"
 #include "streamfind/project_layout.hpp"
 #include "streamfind/plugin_configuration.hpp"
 #include "streamfind/core/vendors/openbabel.hpp"
@@ -618,21 +619,6 @@ export const localArtifactContract = runtime.localArtifactContract;
     const auto &body = module->second;
     send_all(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/javascript; charset=utf-8\r\nContent-Length: " +
         std::to_string(body.size()) + "\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n" + body);
-}
-
-std::vector<std::filesystem::path> workflow_demo_files(const std::filesystem::path &package_root) {
-    std::vector<std::filesystem::path> files;
-    const auto plugins = package_root / "plugins";
-    if (!std::filesystem::exists(plugins)) return files;
-    for (const auto &plugin : std::filesystem::directory_iterator(plugins)) {
-        if (!plugin.is_directory()) continue;
-        const auto workflows = plugin.path() / "resources" / "workflows";
-        if (!std::filesystem::exists(workflows)) continue;
-        for (const auto &entry : std::filesystem::directory_iterator(workflows))
-            if (entry.is_regular_file() && entry.path().extension() == ".json") files.push_back(entry.path());
-    }
-    std::sort(files.begin(), files.end());
-    return files;
 }
 
 }  // namespace detail

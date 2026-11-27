@@ -66,7 +66,8 @@ The MCP exposes these project tools:
 
 ```text
 create, describe, validate
-get_metadata, set_metadata, get_project_plugins
+get_project_metadata, set_project_metadata
+get_workflow_metadata, set_workflow_metadata, get_project_plugins
 get_workflow, get_workflow_execution
 get_result_inventory, get_current_result_inventory, request_result
 get_audit_trail, close

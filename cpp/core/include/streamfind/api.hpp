@@ -23,8 +23,10 @@ enum class ProjectCommand {
     get_project_plugins,
     copy,
     run_workflow,
-    get_metadata,
-    set_metadata,
+    get_project_metadata,
+    set_project_metadata,
+    get_workflow_metadata,
+    set_workflow_metadata,
 
     get_audit_trail,
     close,

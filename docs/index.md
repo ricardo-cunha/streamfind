@@ -93,9 +93,7 @@ The C++ MCP server exposes the catalogue-backed interface.
 
 1. Call `initialize` to receive the server capabilities and usage guidance.
 2. Call `tools/list` to discover callable Operations.
-3. Use `create` to create a project. Then use `describe` or `get_metadata` to
-   inspect it, and `get_project_plugins` to list plugins represented in that
-   project.
+3. Use `create` to create a project, then `describe` to inspect its deterministic project descriptor and `get_project_plugins` to list plugins represented in the project.
 4. Use `get_plugins` to discover plugins with available Operations, then call
    plugin Operations with an explicit `project_path` to the `.sf` folder.
 5. Add operation nodes with their parameters to the persisted workflow.

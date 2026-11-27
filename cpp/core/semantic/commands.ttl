@@ -13,6 +13,7 @@ sfcore:create
     sf:availableInPlugin sfcore:streamfind ;
     sf:hasParameter
         sfcore:projectPathParameter,
+        sfcore:projectMetadataCreateParameter,
         sfcore:workflowMetadataParameter ;
     sf:returns sfcore:projectDescriptorResult ;
     sf:mutatesProject true .
@@ -22,7 +23,7 @@ sfcore:describe
     skos:inScheme sfcore:scheme ;
     sf:commandId "describe" ;
     skos:prefLabel "Describe a project" ;
-    skos:definition "Inspect a persisted project's identity, derived plugins, metadata, workflow, schema version, and creation information without changing it. Use this as the normal first read after create or before other work." ;
+    skos:definition "Inspect a persisted project's identity, derived plugins, project metadata, saved workflow, schema version, and creation information without changing it. Use this as the normal first read after create or before other work." ;
     sf:category "project-management" ;
     sf:guidance "Call describe with the same project_path used by create. If the project does not exist, do not guess metadata; create it or correct the path." ;
     sf:availableInPlugin sfcore:streamfind ;
@@ -56,9 +57,9 @@ sfcore:getPlugins
 sfcore:getMetadata
     a sf:ApiCommand ;
     skos:inScheme sfcore:scheme ;
-    sf:commandId "get_metadata" ;
+    sf:commandId "get_project_metadata" ;
     skos:prefLabel "Read project metadata" ;
-    skos:definition "Return the user-defined metadata stored for a project. An empty object is a valid result when no metadata has been set." ;
+    skos:definition "Return user-defined project metadata owned by the .sf project workspace. Use describe for the deterministic project descriptor; workflow name and description are in workflow.metadata." ;
     sf:category "project-management" ;
     sf:availableInPlugin sfcore:streamfind ;
     sf:hasParameter sfcore:projectPathParameter ;
@@ -68,13 +69,42 @@ sfcore:getMetadata
 sfcore:setMetadata
     a sf:ApiCommand ;
     skos:inScheme sfcore:scheme ;
-    sf:commandId "set_metadata" ;
+    sf:commandId "set_project_metadata" ;
     skos:prefLabel "Set project metadata" ;
-    skos:definition "Replace the user-defined metadata stored for a project. This changes metadata only and does not change persisted workflow operations or analyses." ;
+    skos:definition "Replace user-defined metadata stored on the .sf project workspace. This does not modify workflow metadata, operations, or connections." ;
+    sf:guidance "Use workflow metadata tools for workflow names and descriptions. Future scheduler settings will belong to the separate project configuration layer." ;
     sf:availableInPlugin sfcore:streamfind ;
     sf:hasParameter
         sfcore:projectPathParameter,
-        sfcore:metadataParameter ;
+        sfcore:projectMetadataParameter ;
+    sf:returns sfcore:metadataResult ;
+    sf:mutatesProject true .
+
+sfcore:getWorkflowMetadata
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "get_workflow_metadata" ;
+    skos:prefLabel "Read workflow metadata" ;
+    skos:definition "Return metadata attached to the saved workflow definition, including its name and description. This is distinct from user-defined project metadata." ;
+    sf:category "workflow-planning" ;
+    sf:availableInPlugin sfcore:streamfind ;
+    sf:hasParameter sfcore:projectPathParameter ;
+    sf:returns sfcore:metadataResult ;
+    sf:mutatesProject false .
+
+sfcore:setWorkflowMetadata
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "set_workflow_metadata" ;
+    skos:prefLabel "Set workflow metadata" ;
+    skos:definition "Replace only workflow.metadata, such as its name and description, preserving the operation graph, connections, and layout. Requires the current definition_revision from get_workflow; stale revisions are rejected. A metadata-only update does not change workflow result provenance." ;
+    sf:category "workflow-planning" ;
+    sf:guidance "Call get_workflow immediately before updating and pass its definition_revision. Use set_workflow when changing operations, connections, or other workflow-definition fields." ;
+    sf:availableInPlugin sfcore:streamfind ;
+    sf:hasParameter
+        sfcore:projectPathParameter,
+        sfcore:workflowMetadataReplacementParameter,
+        sfcore:workflowDefinitionRevisionParameter ;
     sf:returns sfcore:metadataResult ;
     sf:mutatesProject true .
 
@@ -83,7 +113,7 @@ sfcore:getWorkflow
     skos:inScheme sfcore:scheme ;
     sf:commandId "get_workflow" ;
     skos:prefLabel "Read the project workflow" ;
-    skos:definition "Return the persisted operation graph, including configured operation instances and explicit typed-port connections." ;
+    skos:definition "Return the complete persisted workflow definition, including workflow metadata, configured operation instances, explicit typed-port connections, and definition_revision." ;
     sf:availableInPlugin sfcore:streamfind ;
     sf:hasParameter sfcore:projectPathParameter ;
     sf:returns sfcore:workflowResult ;
@@ -347,7 +377,7 @@ sfcore:projectDescriptorResult
     skos:definition "Project identity, derived plugins, metadata, workflow, table list, and cache summary." ;
     sf:type "table" ;
     sf:hasProperty
-        sfcore:projectMetadataColumn,
+        sfcore:metadataObjectColumn,
         sfcore:schemaVersionColumn,
         sfcore:frameworkVersionColumn,
         sfcore:createdAtColumn,
@@ -377,17 +407,17 @@ sfcore:metadataResult
     a sf:ApiCommandResult ;
     sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Project metadata result" ;
-    skos:definition "The project metadata JSON object." ;
+    skos:prefLabel "Metadata object result" ;
+    skos:definition "One metadata JSON object serialized in the metadata column, returned by a project- or workflow-metadata read or update." ;
     sf:type "table" ;
-    sf:hasProperty sfcore:projectMetadataColumn .
+    sf:hasProperty sfcore:metadataObjectColumn .
 
 sfcore:workflowResult
     a sf:ApiCommandResult ;
     sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow result" ;
-    skos:definition "The persisted operation graph with configured nodes and typed-port connections." ;
+    skos:definition "The persisted workflow definition with descriptive metadata, configured nodes, typed-port connections, and definition revision." ;
     sf:type "object" .
 
 sfcore:auditEntriesResult

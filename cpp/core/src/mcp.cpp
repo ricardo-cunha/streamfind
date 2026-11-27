@@ -305,11 +305,12 @@ Json tools() {
         {"required", Json::array({"name", "description"})},
         {"properties", Json{{"name", Json{{"type", "string"}, {"minLength", 1}}},
                              {"description", Json{{"type", "string"}, {"minLength", 1}}}}},
-        {"description", "User-defined workflow metadata. Definition concurrency is tracked by definition_revision; workflow version tracks result provenance."}};
-    const Json project_metadata_schema = Json{{"type", "object"}, {"additionalProperties", true},
-        {"description", "Project-owned metadata, including the project name shown in the workspace."}};
+        {"description", "Metadata belonging to the saved workflow definition, including its name and description. Replacing this object changes workflow.metadata only, not operations or connections."}};
+    const Json project_metadata_schema = Json{{"type", "object"},
+        {"additionalProperties", Json{{"type", Json::array({"string", "number", "boolean", "null"})}}},
+        {"description", "User-defined project-level metadata for the .sf workspace. Values must be JSON scalars. Separate from workflow metadata and future operational project configuration."}};
     const Json create_schema = schema(Json{{"project_path", project_path},
-                                           {"metadata", project_metadata_schema},
+                                           {"project_metadata", project_metadata_schema},
                                            {"workflow_metadata", workflow_metadata_schema}},
                                       Json::array({"project_path"}));
     const Json workflow_schema = schema(Json{{"project_path", project_path}, {"workflow", {{"type", "object"}}}},
@@ -357,16 +358,22 @@ Json tools() {
         const auto name = entry.value("name", "");
         if (name == "create") entry["inputSchema"] = create_schema;
         else if (name == "describe" || name == "connect" || name == "validate" ||
-            name == "get_project_plugins" || name == "get_metadata" ||
+            name == "get_project_plugins" || name == "get_project_metadata" ||
+            name == "get_workflow_metadata" ||
             name == "get_workflow" || name == "create_workflow_execution" ||
             name == "get_execution" || name == "list_executions" ||
             name == "cancel_execution" ||
             name == "get_audit_trail" || name == "get_result_inventory" ||
             name == "get_current_result_inventory" || name == "close")
             entry["inputSchema"] = project_path_schema;
-        else if (name == "set_metadata") entry["inputSchema"] = schema(
-            Json{{"project_path", project_path}, {"metadata", project_metadata_schema}},
-            Json::array({"project_path", "metadata"}));
+        else if (name == "set_project_metadata") entry["inputSchema"] = schema(
+            Json{{"project_path", project_path}, {"project_metadata", project_metadata_schema}},
+            Json::array({"project_path", "project_metadata"}));
+        else if (name == "set_workflow_metadata") entry["inputSchema"] = schema(
+            Json{{"project_path", project_path}, {"workflow_metadata", workflow_metadata_schema},
+                 {"definition_revision", Json{{"type", "integer"}, {"minimum", 1},
+                    {"description", "Current definition_revision returned by get_workflow; stale revisions are rejected."}}}},
+            Json::array({"project_path", "workflow_metadata", "definition_revision"}));
         else if (name == "resolve_operation_inputs") entry["inputSchema"] = schema(
             Json{{"project_path", project_path},
                  {"operation_id", operation_instance_reference}},
@@ -385,8 +392,8 @@ Json tools() {
         else if (name == "get_workflow_execution") entry["inputSchema"] = workflow_execution_schema;
 
         if (name == "create") {
-            entry["description"] = "Create a new project database. This is the first step of the operation-graph workflow; then call add_operation for each node.";
-            entry["_meta"]["streamfind"]["guidance"] = "Call create once with project_path, then add operation nodes with their parameters.";
+            entry["description"] = "Create a new .sf project. Optionally supply project_metadata for workspace annotations and workflow_metadata for the initial workflow's name and description. Then add operation nodes or set the complete workflow.";
+            entry["_meta"]["streamfind"]["guidance"] = "Call create once with project_path. Use project_metadata only for workspace annotations, and workflow_metadata only for the saved workflow's name and description.";
         } else if (name == "add_operation") {
             entry["description"] = "Add one configured operation node to the persisted workflow graph. The service assigns the next integer node ID automatically.";
             entry["_meta"]["streamfind"]["guidance"] = "The node ID is assigned as one greater than the highest integer ID already in the workflow. Add every node with its final parameters before connecting typed ports. Use get_operation to inspect the operation schema.";
@@ -394,8 +401,20 @@ Json tools() {
             entry["description"] = "Connect one operation output port to another operation input port in the persisted workflow graph.";
             entry["_meta"]["streamfind"]["guidance"] = "Use exact operation instance ids and semantic port ids. Connect all required inputs before validation.";
         } else if (name == "set_workflow") {
-            entry["description"] = "Replace the persisted operation graph atomically with a complete workflow object containing operations and typed connections.";
-            entry["_meta"]["streamfind"]["guidance"] = "Read the latest workflow with get_workflow and preserve its definition_revision in the submitted workflow. A stale revision is rejected; reload and reconcile before retrying. Use this instead of repeated add_operation/connect_operations calls when submitting the complete graph at once.";
+            entry["description"] = "Replace the complete saved workflow definition, including workflow metadata, operations, and typed connections.";
+            entry["_meta"]["streamfind"]["guidance"] = "Read the latest workflow with get_workflow and preserve its definition_revision in the submitted workflow. A stale revision is rejected; reload and reconcile before retrying. For a metadata-only edit, use set_workflow_metadata so the operation graph is not resubmitted.";
+        } else if (name == "get_project_metadata") {
+            entry["description"] = "Read user-defined metadata for the .sf workspace. This is distinct from workflow metadata and from the deterministic project descriptor returned by describe.";
+        } else if (name == "set_project_metadata") {
+            entry["description"] = "Replace user-defined metadata for the .sf workspace. It does not change workflow metadata, operations, or connections; use set_workflow_metadata for the saved workflow's name or description.";
+            entry["_meta"]["streamfind"]["guidance"] = "Values must be JSON scalars. This stores user annotations only; future operational scheduler settings belong to project configuration.";
+        } else if (name == "get_workflow_metadata") {
+            entry["description"] = "Read metadata attached to the saved workflow definition, including its name and description. Distinct from project metadata.";
+        } else if (name == "set_workflow_metadata") {
+            entry["description"] = "Replace only metadata on the saved workflow definition, such as its name and description. Operations and connections are preserved.";
+            entry["_meta"]["streamfind"]["guidance"] = "Call get_workflow immediately before this tool and pass its definition_revision. Supply the complete workflow_metadata object, including name and description. The update is revision-checked and preserves operations, connections, layout, and workflow result provenance.";
+        } else if (name == "get_workflow") {
+            entry["description"] = "Read the complete saved workflow definition, including metadata, operations, connections, and definition_revision.";
         } else if (name == "validate_workflow") {
             entry["description"] = "Validate the persisted operation graph and its parameters without executing it.";
             entry["_meta"]["streamfind"]["guidance"] = "Call after adding and connecting nodes; fix every validation error before run_workflow.";
@@ -418,8 +437,9 @@ Json tools() {
 
 const char *command(const std::string &name) {
     static const std::array commands = {
-        "create", "describe", "validate", "get_project_plugins", "get_metadata",
-        "set_metadata", "get_workflow", "get_workflow_execution", "transition_execution", "cancel_execution", "set_workflow", "validate_workflow",
+        "create", "describe", "validate", "get_project_plugins", "get_project_metadata",
+        "set_project_metadata", "get_workflow_metadata", "set_workflow_metadata",
+        "get_workflow", "get_workflow_execution", "transition_execution", "cancel_execution", "set_workflow", "validate_workflow",
         "run_workflow",
         "get_audit_trail", "copy", "close",
         "add_operation", "connect_operations", "get_result_inventory", "get_current_result_inventory",
@@ -444,6 +464,7 @@ std::string interface_guidance() {
         "merges that result payload into the target operation parameters and validates "
         "the resulting parameter object. Do not infer dependencies from operation order "
         "or create next-operation edges.\n\n"
+        "Workflow metadata is descriptive and is edited independently with get_workflow_metadata/set_workflow_metadata; the setter preserves operations and connections and requires the current definition_revision. Project metadata is user-defined workspace annotation, distinct from workflow metadata and from the deterministic descriptor returned by describe. Scheduler settings will belong to the future project configuration layer. Use set_workflow only when changing the complete workflow definition. "
         "Recommended agent workflow: call tools/list to discover callable MCP tools and "
         "schemas; create or describe a project; discover canonical operations with get_operations "
         "and inspect their full schemas with get_operation; use add_operation and "
@@ -687,14 +708,15 @@ Json Session::handle(const Json &request) {
         }
     }
     if (name == "create" || name == "describe" || name == "validate" ||
-        name == "get_project_plugins" || name == "get_metadata" ||
-        name == "set_metadata" || name == "get_audit_trail") {
+        name == "get_project_plugins" || name == "get_project_metadata" ||
+        name == "get_workflow_metadata" || name == "set_project_metadata" ||
+        name == "set_workflow_metadata" || name == "get_audit_trail") {
         try {
             const auto arguments = request.at("params").value("arguments", Json::object());
             const auto project_path = arguments.at("project_path").get<std::string>();
             if (name == "create") {
                 const auto attachment = service::create_project(
-                    path_from_utf8(project_path), arguments.value("metadata", Json::object()),
+                    path_from_utf8(project_path), arguments.value("project_metadata", Json::object()),
                     arguments.value("workflow_metadata", Json::object()));
                 return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::get_project(attachment))}};
             }
@@ -703,10 +725,22 @@ Json Session::handle(const Json &request) {
                 return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::get_project(attachment))}};
             if (name == "get_project_plugins")
                 return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::get_project(attachment).value("plugins", Json::array()))}};
-            if (name == "get_metadata")
+            if (name == "get_project_metadata")
                 return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::get_project(attachment).value("metadata", Json::object()))}};
-            if (name == "set_metadata")
-                return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::set_metadata(attachment, arguments.at("metadata")))}};
+            if (name == "get_workflow_metadata")
+                return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::get_workflow(attachment).value("metadata", Json::object()))}};
+            if (name == "set_project_metadata")
+                return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::set_metadata(attachment, arguments.at("project_metadata")).value("metadata", Json::object()))}};
+            if (name == "set_workflow_metadata") {
+                if (!arguments.contains("workflow_metadata") || !arguments.contains("definition_revision"))
+                    throw Error(ErrorCode::InvalidArgument, "Workflow metadata update requires workflow_metadata and definition_revision");
+                auto workflow = service::get_workflow(attachment);
+                if (workflow.value("definition_revision", 0) != arguments.at("definition_revision").get<int>())
+                    throw Error(ErrorCode::InvalidArgument, "Workflow definition revision is stale; call get_workflow and retry with the current revision");
+                workflow["metadata"] = arguments.at("workflow_metadata");
+                const auto saved = service::save_workflow(attachment, workflow);
+                return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(saved.value("workflow", Json::object()).value("metadata", Json::object()))}};
+            }
             if (name == "get_audit_trail")
                 return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::get_audit_trail(attachment))}};
             if (name == "validate")

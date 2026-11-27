@@ -504,6 +504,17 @@ if(STREAMFIND_BUILD_TESTS)
             "Official tests require streamfind.data at ${STREAMFIND_DATA_ROOT}. Run 'sfdev setup --components data' or set STREAMFIND_EXAMPLE_DATA_ROOT to its data directory.")
     endif()
     add_subdirectory(core/tests)
+    add_executable(streamfind_workflow_demo_discovery_contract
+        core/tests/unit/workflow_demo_discovery_contract.cpp
+        service/src/workflow_demo_discovery.cpp)
+    target_include_directories(streamfind_workflow_demo_discovery_contract PRIVATE
+        service/include)
+    target_compile_definitions(streamfind_workflow_demo_discovery_contract PRIVATE
+        STREAMFIND_TEST_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
+    add_test(NAME streamfind_workflow_demo_discovery_contract
+        COMMAND streamfind_workflow_demo_discovery_contract)
+    set_tests_properties(streamfind_workflow_demo_discovery_contract
+        PROPERTIES LABELS "framework;service")
     add_dependencies(streamfind_project_table_store_manifest_contract streamfind_core_catalogue)
     if(TARGET streamfind_mass_spec_project_isolation_contract)
         add_dependencies(streamfind_mass_spec_project_isolation_contract streamfind_aggregate_catalogue)
@@ -588,6 +599,7 @@ endif()
 add_executable(streamfind_service
     service/src/streamfind-service.cpp
     service/src/result_store.cpp
+    service/src/workflow_demo_discovery.cpp
     service/src/service_server.cpp
     service/src/service_plugin_runtime.cpp
     service/src/project_runtime_manager.cpp)

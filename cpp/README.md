@@ -180,7 +180,8 @@ Canonical commands are:
 
 ```text
 create, describe, validate
-get_metadata, set_metadata
+get_project_metadata, set_project_metadata
+get_workflow_metadata, set_workflow_metadata
 get_project_plugins
 get_workflow, set_workflow, validate_workflow, run_workflow
 add_operation, connect_operations, get_result_inventory
@@ -189,7 +190,7 @@ get_audit_trail
 close
 ```
 
-`set_metadata`, `set_workflow`, and `run_workflow`
+`set_project_metadata`, `set_workflow_metadata`, `set_workflow`, and `run_workflow`
 and `copy` require a writable project. `get_*`, `describe`, and validation
 commands are read-only.
 

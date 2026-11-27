@@ -30,7 +30,7 @@ tool names, descriptions, input schemas, ports, and result contracts.
 Typical project entry points are:
 
 ```text
-create -> describe/get_metadata
+create -> describe
       -> get_plugins -> get_operations -> get_operation
       -> add_operation -> connect_operations
       -> validate_workflow -> run_workflow

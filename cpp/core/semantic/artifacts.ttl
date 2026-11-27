@@ -11,7 +11,7 @@ sfcore:projectTable
     sf:tableContractName "PROJECT" ;
     sf:dataKind "table" ;
     sf:hasColumn
-        sfcore:projectMetadataColumn,
+        sfcore:metadataObjectColumn,
         sfcore:projectWorkflowColumn,
         sfcore:schemaVersionColumn,
         sfcore:frameworkVersionColumn .
