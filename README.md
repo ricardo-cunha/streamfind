@@ -29,7 +29,10 @@ provide result viewers and other UI capabilities.
 - Discover operations and their typed inputs, outputs, parameters, constraints,
   and results from the shared semantic catalogue.
 - Build mass-spectrometry workflows for analyses, spectra, chromatograms,
-  feature processing, isotope/adduct/loss annotation, and suspect screening.
+  feature processing, isotope/adduct/loss annotation, suspect screening, and
+  calibration-based sample quantification.
+- Process supported Raman/infrared spectra and acquire or analyze sensor data
+  through OPC UA, MQTT, and sensor time-series workflows.
 - Run workflows interactively in the browser or programmatically through MCP.
 - Extend the backend with C++ domain plugins and the browser app with frontend
   plugins for result viewers, editors, and other UI capabilities.
@@ -43,9 +46,18 @@ provide result viewers and other UI capabilities.
 | Browser application | Included in native packages | Local project and workflow editing |
 | C++ developer framework and SDK | Included in Windows and Linux runtime archives | Developing and installing external C++ plugins and frontend viewers |
 
-The current native package and embedded developer framework version is defined
-in [`VERSION`](VERSION). See [Releases](docs/releases.md) for archives,
-checksums, and package contents.
+The current native package and embedded developer framework version is
+**0.9.0**, defined in [`VERSION`](VERSION). Both Windows x64 and Linux x86_64 archives
+include the matching runtime, `streamfind-dev`, native SDK, viewer SDK, and
+provisioning tools. See [Releases](docs/releases.md) for package contents and
+checksums.
+
+Use the release-bundled `streamfind-dev` framework to develop external
+plugins and viewers against an extracted runtime package. Use the repository's
+`sfdev` commands to develop streamfind itself, including its bundled plugins,
+builds, tests, packages, and releases. See the [plugin development guide](docs/plugin-development.md)
+for the release framework workflow and [`scripts/README.md`](scripts/README.md)
+for repository development.
 
 ## How it is used
 
@@ -62,7 +74,7 @@ run state.
 
 The R package is maintained separately as [`streamfind.r`](https://git.uni-due.de/odea-project/streamfind/streamfind.r),
 with its reference documentation at <https://streamfind-r-836f9a.gitpages.uni-due.de>.
-It is the legacy StreamFind R package and is not part of this repository's
+It is the legacy streamfind R package and is not part of this repository's
 native runtime or plugin framework. It may provide a starting point for a
 future R binding to the current streamfind platform; for now, consult its own
 repository and documentation for package status and usage.

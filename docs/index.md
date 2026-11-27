@@ -69,17 +69,20 @@ streamfind brings several analytical plugins into a common workflow platform:
 
 - **Mass spectrometry:** import analysis files and work with spectra and
   chromatograms; detect and group features; annotate isotopes, adducts, and
-  molecular relationships; screen suspects; and filter or visualize results.
-  Reader and operation support depends on the source format and parameters.
+  molecular relationships; screen suspects; quantify samples with calibration
+  models and internal standards; and filter or visualize results. Reader and
+  operation support depends on the source format and parameters.
 - **Raman and infrared spectroscopy:** import supported ASC, SIF, WIP, SMF, and
   WiTec text files, then summarize, normalize, smooth, baseline-correct, or
   filter spectra. Time-ordered acquisitions can retain their spectrum and
   acquisition-time metadata.
 - **Statistics:** explore tabular data with PCA and PLS regression or
   classification, and compare two groups with fold-change analysis.
-- **Sensors:** the plugin is being developed for sensor-data workflows. A
-  planned direction is connecting to OPC UA servers to bring process data into
-  streamfind; sensor operations are not yet available in the current package.
+- **Sensors:** connect to OPC UA servers to explore nodes, inspect and collect
+  values, or capture time series; capture bounded MQTT time series; and normalize,
+  validate, filter, resample, calculate rolling statistics, and align sensor
+  observations. OPC UA and MQTT operations require a reachable compatible
+  endpoint and the relevant connection parameters.
 
 These plugins share the workflow and result-viewing framework, while each
 provides its own data structures and analytical methods.

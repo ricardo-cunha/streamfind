@@ -29,9 +29,9 @@ The current package manifests are:
 
 | Plugin | Windows library | POSIX library | Plugin state |
 | --- | --- | --- | --- |
-| `mass_spec` | `streamfind_mass_spec.dll` | `libstreamfind_mass_spec.so` | Native readers and NTA methods |
-| `raman` | `streamfind_raman.dll` | `libstreamfind_raman.so` | Native ASC/SIF and WiTec text readers for Raman/IR spectra and time-resolved spectra; processing operations are in development |
-| `sensors` | `streamfind_sensors.dll` | `libstreamfind_sensors.so` | Dynamic empty plugin; no executable capabilities yet |
+| `mass_spec` | `streamfind_mass_spec.dll` | `libstreamfind_mass_spec.so` | Native readers, NTA, calibration, and sample quantification |
+| `raman` | `streamfind_raman.dll` | `libstreamfind_raman.so` | Native readers for supported Raman/IR formats, plus spectrum normalization, baseline correction, range filtering, summaries, and smoothing |
+| `sensors` | `streamfind_sensors.dll` | `libstreamfind_sensors.so` | OPC UA and MQTT acquisition, sensor-table normalization and validation, filtering, resampling, rolling statistics, and time-series alignment |
 
 For a development-tree runtime, place `streamfind.json` beside
 `streamfind-mcp.exe` and configure explicit plugin roots and IDs:
@@ -320,13 +320,13 @@ bin/
 
 Do not copy vendor libraries beside individual plugins. The packaged launcher and host configure the single package-relative `bin/` runtime path.
 
-The shipped plugin plugins are:
+The shipped plugins are:
 
 | Plugin | Current state |
 | --- | --- |
-| `mass_spec` | Native readers and NTA methods; primary production plugin |
-| `raman` | Native ASC/SIF and WiTec text ingestion with Raman/IR spectrum tables; processing remains in development |
-| `sensors` | Dynamic empty plugin; no executable capabilities yet |
+| `mass_spec` | Native readers, NTA, calibration, and sample quantification; primary production plugin |
+| `raman` | Native ingestion and processing for Raman/IR spectrum tables |
+| `sensors` | OPC UA and MQTT acquisition and sensor time-series processing |
 
 
 

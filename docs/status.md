@@ -29,7 +29,13 @@ The current native packages include:
 - raw and persisted spectrum and chromatogram access;
 - native mzML and vendor-container reader implementations;
 - feature-processing and non-target-analysis operations, subject to the
-  selected file format and workflow parameters.
+  selected file format and workflow parameters;
+- Raman and infrared spectrum ingestion and processing for supported file
+  formats;
+- sensor-data operations for OPC UA, MQTT, and canonical sensor time-series
+  processing; and
+- calibration and sample quantification operations in the mass-spectrometry
+  plugin.
 
 Vendor-specific behavior depends on the file format and the available fixture
 or data source. A package should not be interpreted as support for every vendor
